@@ -6,18 +6,18 @@ import requests
 import os
 
 #square access token
-ACCESS_TOKEN = 'MY_ACCESS_TOKEN'
+ACCESS_TOKEN = 'ovzAgHwLQslQG0rTZLX8DQ'
 #opencart database server
-DATABASE_SERVER = 'MYSQL_SERVER_NAME'
+DATABASE_SERVER = '127.0.0.1'
 #opencart database username/password
-DATABASE_USER = 'MYSQL_USERNAME'
-DATABASE_USER_PASSWORD = 'MYSQL_PASSWORD'
+DATABASE_USER = 'root'
+DATABASE_USER_PASSWORD = ''
 #opencart database name
-DATABASE_NAME = 'OPENCART_DATABASE_NAME'
+DATABASE_NAME = 'juri'
 
 #root location of folder that contains the images referred to as relative paths
 #in the database, usually, websitelocation/image
-IMAGE_FILE_LOCATION = '/mywebsite/image'
+IMAGE_FILE_LOCATION = 'c:/xampp/htdocs/juri/image/'
 
 def create_item(item):
   """
@@ -183,18 +183,12 @@ def get_opencart_products():
     query = ("""select d.name productName
 , c.name categoryName
 , p.price
-, case 
-    when colour.valueName is not null then concat(p.model,left(colour.valueName,1)) 
-    else p.model
-  end SKU
-, case 
-    when colour.valueName is null then size.valueName
-    when size.valueName is null then colour.valuename
-    else concat(colour.valueName, ' ', size.valueName) 
-end Variation
+, COALESCE(v.sku, p.sku) SKU
+, coalesce(vd.description, d.name) variation
 , d.product_id
+, coalesce(v.product_variant_id, d.product_id) user_data
 , concat('{0}', p.image) image_url
-,  COALESCE(size.quantity, colour.quantity,p.quantity) quantity
+, coalesce(v.quantity, p.quantity) quantity
 from oc_product_description d
 join 
 (
@@ -205,29 +199,14 @@ join
 on pc.product_id = d.product_id
 join oc_category_description c on c.category_id = pc.category_id
 join oc_product p on p.product_id = d.product_id
-left join
-(
-select po.product_id, o.name optionName, v.name valueName, po.quantity
-from oc_product_option_value po
-join oc_option_description o on po.option_id = o.option_id
-join oc_option_value_description v on po.option_value_id = v.option_value_id
-where o.name = 'colour'
-and po.quantity > 0
-) colour 
-ON colour.product_id = d.product_id
-left join 
-(
-select po.product_id, o.name optionName, v.name valueName, po.quantity
-from oc_product_option_value po
-join oc_option_description o on po.option_id = o.option_id
-join oc_option_value_description v on po.option_value_id = v.option_value_id
-where o.name = 'ring size'
-and po.quantity > 0
-) size
-on size.product_id = d.product_id
+
+left join oc_product_variant v ON v.product_id = d.product_id
+left join oc_product_variant_description vd ON vd.product_variant_id = v.product_variant_id
 
 where d.language_id = 2
 and c.language_id = 2
+
+ORDER BY d.product_id
 """.format(IMAGE_FILE_LOCATION))
 
     cursor.execute(query)
@@ -237,7 +216,7 @@ and c.language_id = 2
     product = {}
     previous_product_id = 0
     is_first_iteration = True
-    for (productName, catagory_name, price, sku, variation, product_id, image_url, quantity) in cursor:
+    for (productName, catagory_name, price, sku, variation, product_id, user_data, image_url, quantity) in cursor:
         #new product, finish processing completed product    
         if previous_product_id != product_id:        
 
@@ -263,7 +242,7 @@ and c.language_id = 2
             variation_processed = process_variation(variation_name, 
                                                     price, 
                                                     sku, 
-                                                    product_id, 
+                                                    user_data, 
                                                     quantity)            
         
             
@@ -279,7 +258,7 @@ and c.language_id = 2
             variation_processed = process_variation(variation_name, 
                                                     price, 
                                                     sku, 
-                                                    product_id, 
+                                                    user_data, 
                                                     quantity)         
             
             variations.append(variation_processed)             
@@ -324,6 +303,51 @@ def apply_fee(item_id, fee_id):
     response = connection.getresponse()
     response_body = json.loads(response.read())
     return response_body
+
+def update_variant(item_id, variant_id, new_data):
+    #PUT /v1/{merchant_id}/items/{item_id}/variations/{variation_id}
+    #new data = dict sku, user_data
+
+    request_body = json.dumps(new_data)
+    connection.request('PUT', 
+    '/v1/me/items/{0}/variations/{1}'.format(item_id, variant_id),
+    request_body,
+    headers=request_headers)
+    
+    response = connection.getresponse()
+    response_body = json.loads(response.read())
+    
+    print response_body
+
+
+if __name__ == '__main__disable':
+    """
+    read square items
+    update SKU
+    update inventory
+    """
+    connection = httplib.HTTPSConnection('connect.squareup.com')
+
+    request_headers = {'Authorization': 'Bearer ' + ACCESS_TOKEN,
+                   'Accept': 'application/json',
+                   'Content-Type': 'application/json'}  
+    square = list_items()    
+    opencart = get_opencart_products()
+    
+    matches = 0
+    for oproduct in opencart:
+        for ovariant in oproduct["variations"]:
+            for sproduct in square:
+                for svariant in sproduct["variations"]:
+                    if (oproduct["user_data"] == sproduct["user_data"] 
+                    and svariant["name"] == ovariant["name"]):
+                        if sproduct["name"] !=  oproduct["name"]:                           
+                           print sproduct["name"] 
+                           print oproduct["name"]
+                        else:
+                            matches += 1
+
+                        break
 
 if __name__ == '__main__':
   """
