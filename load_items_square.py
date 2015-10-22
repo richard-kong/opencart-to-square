@@ -44,7 +44,9 @@ def create_item(item):
     print json.dumps(response_body, sort_keys=True, indent=2, separators=(',', ': '))
     image_id = response_body['id']
     image_url = item["image"]
-    upload_image(image_id, image_url)
+    
+    if item["image"] != IMAGE_FILE_LOCATION:
+        upload_image(image_id, image_url)
     
     inventory_list = []    
     
@@ -205,7 +207,7 @@ left join oc_product_variant_description vd ON vd.product_variant_id = v.product
 
 where d.language_id = 2
 and c.language_id = 2
-
+AND d.product_id > 100
 ORDER BY d.product_id
 """.format(IMAGE_FILE_LOCATION))
 
@@ -381,7 +383,7 @@ if __name__ == '__main__':
   products = get_opencart_products()
   no_images = []
   for product in products:
-      if not os.path.isfile(product['image']):
+      if not os.path.isfile(product['image']) and product['image'] != 'IMAGE_FILE_LOCATION':
           no_images.append({'image': product['image'], 
                           'name' : product['name']})
   if len(no_images) > 0:
